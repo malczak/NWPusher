@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		320FF1561B0C8F9100429E98 /* NWTokensImporter.m in Sources */ = {isa = PBXBuildFile; fileRef = 320FF1551B0C8F9100429E98 /* NWTokensImporter.m */; };
+		320FF1591B0CB94800429E98 /* NWPushService.m in Sources */ = {isa = PBXBuildFile; fileRef = 320FF1581B0CB94800429E98 /* NWPushService.m */; };
 		B3005FC318F43659009BB7C3 /* Application.xib in Resources */ = {isa = PBXBuildFile; fileRef = B3005FC218F43659009BB7C3 /* Application.xib */; };
 		B3376A63172BB71200242EBB /* NWLCore.c in Sources */ = {isa = PBXBuildFile; fileRef = B3376A61172BB71200242EBB /* NWLCore.c */; };
 		B3376A64172BB71200242EBB /* NWLCore.c in Sources */ = {isa = PBXBuildFile; fileRef = B3376A61172BB71200242EBB /* NWLCore.c */; };
@@ -51,6 +53,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		320FF1541B0C8F9100429E98 /* NWTokensImporter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NWTokensImporter.h; sourceTree = "<group>"; };
+		320FF1551B0C8F9100429E98 /* NWTokensImporter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NWTokensImporter.m; sourceTree = "<group>"; };
+		320FF1571B0CB94800429E98 /* NWPushService.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NWPushService.h; sourceTree = "<group>"; };
+		320FF1581B0CB94800429E98 /* NWPushService.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NWPushService.m; sourceTree = "<group>"; };
 		B3005FC218F43659009BB7C3 /* Application.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = Application.xib; sourceTree = "<group>"; };
 		B3376A61172BB71200242EBB /* NWLCore.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = NWLCore.c; path = Mac/NWLCore.c; sourceTree = SOURCE_ROOT; };
 		B3376A62172BB71200242EBB /* NWLCore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = NWLCore.h; path = Mac/NWLCore.h; sourceTree = SOURCE_ROOT; };
@@ -239,6 +245,10 @@
 				B3F232AB189682D30043DA98 /* NWSSLConnection.m */,
 				B34BF1B218DDF401004BA9F7 /* NWType.h */,
 				B34BF1B318DDF401004BA9F7 /* NWType.m */,
+				320FF1541B0C8F9100429E98 /* NWTokensImporter.h */,
+				320FF1551B0C8F9100429E98 /* NWTokensImporter.m */,
+				320FF1571B0CB94800429E98 /* NWPushService.h */,
+				320FF1581B0CB94800429E98 /* NWPushService.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -362,6 +372,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				320FF1561B0C8F9100429E98 /* NWTokensImporter.m in Sources */,
 				B3F232B4189682D30043DA98 /* NWPushFeedback.m in Sources */,
 				B3F232AE189682D30043DA98 /* NWHub.m in Sources */,
 				B3F232B6189682D30043DA98 /* NWSecTools.m in Sources */,
@@ -369,6 +380,7 @@
 				B3F232B2189682D30043DA98 /* NWPusher.m in Sources */,
 				B3F232B8189682D30043DA98 /* NWSSLConnection.m in Sources */,
 				B3F232B0189682D30043DA98 /* NWNotification.m in Sources */,
+				320FF1591B0CB94800429E98 /* NWPushService.m in Sources */,
 				B33FB1C9172B185C006529CE /* main.m in Sources */,
 				B33FB1CB172B185C006529CE /* NWAppDelegate.m in Sources */,
 				B3376A63172BB71200242EBB /* NWLCore.c in Sources */,

@@ -11,13 +11,15 @@
 #import "NWSecTools.h"
 #import "NWLCore.h"
 #import "NWPushFeedback.h"
-
+#import "NWPushService.h"
+#import "NWTokensImporter.h"
 
 @interface NWAppDelegate () <NWHubDelegate> @end
 
 @implementation NWAppDelegate {
     IBOutlet NSPopUpButton *_certificatePopup;
     IBOutlet NSComboBox *_tokenCombo;
+    IBOutlet NSButton *_importButton;
     IBOutlet NSTextView *_payloadField;
     IBOutlet NSTextView *_logField;
     IBOutlet NSTextField *_countField;
@@ -26,6 +28,10 @@
     IBOutlet NSButton *_reconnectButton;
     IBOutlet NSPopUpButton *_expiryPopup;
     IBOutlet NSPopUpButton *_priorityPopup;
+    IBOutlet NSLayoutConstraint *progressConstraint;
+    IBOutlet NSProgressIndicator *progressIndicator;
+    IBOutlet NSSlider *_delaySlider;
+    IBOutlet NSTextField *_delayLabel;
     IBOutlet NSScrollView *_logScroll;
 
     NWHub *_hub;
@@ -33,6 +39,9 @@
     NSArray *_certificateIdentityPairs;
     NSUInteger _lastSelectedIndex;
     NWCertificateRef _selectedCertificate;
+    
+    NWPushService *pushService;
+    NWTokensImporter *importer;
     
     dispatch_queue_t _serial;
 }
@@ -47,11 +56,18 @@
     NWLPrintInfo();
     _serial = dispatch_queue_create("NWAppDelegate", DISPATCH_QUEUE_SERIAL);
     
+    [self resetTokenCombo];
+    
     _certificateIdentityPairs = @[];
     [self loadCertificatesFromKeychain];
     [self migrateOldConfigurationIfNeeded];
     [self loadConfig];
     [self updateCertificatePopup];
+    
+    [_delaySlider setDoubleValue:0.0];
+    [self delayValueChanged:_delaySlider];
+
+    [self createPushService];
     
     NSString *payload = [_config valueForKey:@"payload"];
     _payloadField.string = payload.length ? payload : @"";
@@ -99,9 +115,15 @@
 
 - (IBAction)push:(NSButton *)sender
 {
-    [self addTokenAndUpdateCombo];
-    [self push];
-    [self upPayloadTextIndex];
+    BOOL batchPush = importer && ([importer.availableTokens count] > 0);
+    if(!batchPush)
+    {
+        [self addTokenAndUpdateCombo];
+        [self push];
+        [self upPayloadTextIndex];
+    } else {
+        [self pushToImported];
+    }
 }
 
 - (IBAction)reconnect:(NSButton *)sender
@@ -123,6 +145,70 @@
 
 - (IBAction)readFeedback:(id)sender {
     [self feedback];
+}
+
+- (IBAction)importTokens:(NSButton*)sender
+{
+    if(importer)
+    {
+        if([importer isWorking])
+        {
+            return;
+        }
+        [self purgeTokens];
+    } else {
+        [self importTokens];
+    }
+}
+
+- (IBAction) delayValueChanged:(NSSlider*) sender
+{
+    [_delayLabel setTitleWithMnemonic:[NSString stringWithFormat:@"%tums",[self pushDelayInMs]]];
+}
+
+-(NSUInteger) pushDelayInMs
+{
+    double span = _delaySlider.maxValue - _delaySlider.minValue;
+    NSUInteger valueInMs = 0 + 2 * (NSUInteger)floor((_delaySlider.doubleValue/span * 500.0)/2.0);
+    return valueInMs;
+}
+
+#pragma mark - Push service
+
+- (void) createPushService
+{
+    __weak typeof(self) weakSelf = self;
+    pushService = [[NWPushService alloc] init];
+    pushService.beginBlock = ^(){
+        NWLogInfo(@"Push start");
+        [weakSelf showSendProgress:YES];
+    };
+    pushService.completionBlock = ^(){
+        [weakSelf purgeTokens];
+        [weakSelf showSendProgress:NO];
+    };
+    pushService.notificationWillSend = ^(NSString *token) {
+        NWLogInfo(@"Sending notification for token '%@'", token);
+    };
+    pushService.notificationSendError = ^(NSString* token, NSError *error) {
+        NWLogWarn(@"Send notification failed for token '%@' with error '%@'", token, error.localizedDescription);
+    };
+}
+
+- (void)showSendProgress:(BOOL) value
+{
+    [self showProgress:value];
+    
+    if(value)
+    {
+        _delaySlider.enabled = NO;
+        _expiryPopup.enabled = NO;
+        _priorityPopup.enabled = NO;
+    } else {
+        _delaySlider.enabled = YES;
+        _expiryPopup.enabled = YES;
+        _priorityPopup.enabled = YES;
+    }
 }
 
 #pragma mark - Certificate and Identity
@@ -228,6 +314,107 @@
     }];
 }
 
+#pragma mark - Import tokens list
+
+- (void) purgeTokens
+{
+    if(importer)
+    {
+        importer = nil;
+        NWLogInfo(@"Purge imported tokens");
+        _importButton.title = @"Import tokens";
+        _tokenCombo.enabled = YES;
+        _certificatePopup.enabled = YES;
+        _pushButton.enabled = YES;
+        _importButton.enabled = YES;
+    }
+}
+
+- (void) importTokens
+{
+    NWLogInfo(@"");
+
+    importer = [[NWTokensImporter alloc] init];
+    __weak typeof(self) weakSelf = self;
+    
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = YES;
+    panel.allowedFileTypes = @[@"txt", @"csv"];
+    [panel beginWithCompletionHandler:^(NSInteger result){
+        if (result != NSFileHandlingPanelOKButton)
+        {
+            return;
+        }
+
+        for (NSURL *url in panel.URLs)
+        {
+            [importer addTokensFile:url];
+        }
+        
+        NWLogInfo(@"Importing tokens...");
+        [self showProgress:YES];
+        [importer parseTokensWithBlock:nil
+                            completion:^(NSArray *tokens){
+                                dispatch_async(dispatch_get_main_queue(), ^(){
+                                    [weakSelf tokensImported:tokens];
+                                });
+                            }];
+
+    }];
+}
+
+- (void)tokensImported:(NSArray*) tokens
+{
+    [self showProgress:NO];
+    
+    if (!tokens.count)
+    {
+        NWLogWarn(@"Unable to tokens from file: no tokens found");
+        return;
+    }
+    
+    NWLogInfo(@"Imported %i tokens", (int)tokens.count);
+}
+
+- (void)showImportProgress:(BOOL) value
+{
+    [self showProgress:value];
+
+    _tokenCombo.enabled = NO;
+    _certificatePopup.enabled = NO;
+    
+    if(value)
+    {
+        _importButton.title = @"Importing ...";
+    } else {
+        _importButton.title = @"Purge tokens";
+    }
+}
+
+#pragma mark - Mark progress
+
+- (void)showProgress:(BOOL) value
+{
+    if(value)
+    {
+        _tokenCombo.enabled = NO;
+        _certificatePopup.enabled = NO;
+        _pushButton.enabled = NO;
+        _importButton.enabled = NO;
+        [progressIndicator startAnimation:self];
+        progressConstraint.constant = 44;
+    } else {
+        _tokenCombo.enabled = YES;
+        _certificatePopup.enabled = YES;
+        _pushButton.enabled = YES;
+        _importButton.enabled = YES;
+        [progressIndicator stopAnimation:self];
+        progressConstraint.constant = 20;
+    }
+}
+
 #pragma mark - Expiry and Priority
 
 - (NSDate *)selectedExpiry
@@ -286,6 +473,7 @@
         _lastSelectedIndex = 0;
         [self selectCertificate:nil identity:nil];
         _tokenCombo.enabled = NO;
+        _importButton.enabled = NO;
         [self loadSelectedToken];
     } else if (index <= _certificateIdentityPairs.count) {
         [_certificatePopup selectItemAtIndex:index];
@@ -293,6 +481,7 @@
         NSArray *pair = [_certificateIdentityPairs objectAtIndex:index - 1];
         [self selectCertificate:pair[0] identity:pair[1] == NSNull.null ? nil : pair[1]];
         _tokenCombo.enabled = YES;
+        _importButton.enabled = YES;
         [self loadSelectedToken];
     } else {
         [_certificatePopup selectItemAtIndex:_lastSelectedIndex];
@@ -359,32 +548,35 @@
 
 - (void)push
 {
-    NSString *payload = _payloadField.string;
     NSString *token = _tokenCombo.stringValue;
+    [self pushWithTokens:@[token]];
+}
+
+- (void)pushToImported
+{
+    NSArray *tokens = importer.availableTokens;
+    if(![tokens count])
+    {
+        NWLogWarn(@"No tokens available");
+        return;
+    }
+    
+    [self pushWithTokens:tokens];
+}
+
+- (void) pushWithTokens:(NSArray*) tokens
+{
+    NSString *payload = _payloadField.string;
     NSDate *expiry = self.selectedExpiry;
     NSUInteger priority = self.selectedPriority;
-    NWLogInfo(@"Pushing..");
-    dispatch_async(_serial, ^{
-        NWNotification *notification = [[NWNotification alloc] initWithPayload:payload token:token identifier:0 expiration:expiry priority:priority];
-        NSError *error = nil;
-        BOOL pushed = [_hub pushNotification:notification autoReconnect:YES error:&error];
-        if (pushed) {
-            dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC));
-            dispatch_after(popTime, _serial, ^(void){
-                NSError *error = nil;
-                NWNotification *failed = nil;
-                BOOL read = [_hub readFailed:&failed autoReconnect:YES error:&error];
-                if (read) {
-                    if (!failed) NWLogInfo(@"Payload has been pushed");
-                } else {
-                    NWLogWarn(@"Unable to read failed: %@", error.localizedDescription);
-                }
-                [_hub trimIdentifiers];
-            });
-        } else {
-            NWLogWarn(@"Unable to push: %@", error.localizedDescription);
-        }
-    });
+    
+    pushService.queue = _serial;
+    pushService.hub = _hub;
+    pushService.delay = [self pushDelayInMs];
+    [pushService pushWithTokens:tokens
+                        payload:payload
+                     expireDate:expiry
+                       priority:priority];
 }
 
 - (void)feedback
@@ -472,11 +664,20 @@
     return NO;
 }
 
-- (void)updateTokenCombo
+- (void)resetTokenCombo
 {
     [_tokenCombo removeAllItems];
+}
+
+- (void)updateTokenCombo
+{
+    [self resetTokenCombo];
     NSArray *tokens = [self tokensWithCertificate:_selectedCertificate create:NO];
-    if (tokens.count) [_tokenCombo addItemsWithObjectValues:tokens.reverseObjectEnumerator.allObjects];
+    if (tokens.count) {
+        for (NSObject *item in tokens.reverseObjectEnumerator) {
+            [_tokenCombo insertItemWithObjectValue:item atIndex:0];
+        }
+    }
 }
 
 - (void)loadSelectedToken
