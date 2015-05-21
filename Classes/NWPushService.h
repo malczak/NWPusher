@@ -33,6 +33,8 @@
 
 - (NSUInteger) totalCount;
 
+- (CGFloat) progress;
+
 - (NSUInteger) intProgress;
 
 - (void) pushWithTokens:(NSArray*) tokens payload:(NSString*) payload expireDate:(NSDate*) expiry priority:(NSUInteger) priority;

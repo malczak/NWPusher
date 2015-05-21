@@ -191,10 +191,13 @@
         [weakSelf showSendProgress:NO];
     };
     pushService.notificationWillSend = ^(NSString *token) {
-        NWLogInfo(@"Sending notification for token '%@': progress %tu%%", token, weakService.intProgress);
+        NWLogInfo(@"Sending notification for token '%@': progress %.2f%%", token, weakService.progress);
+    };
+    pushService.notificationSendComplete = ^(NSString *token) {
+        NWLogInfo(@"Notification send for token '%@': progress %.2f%%", token, weakService.progress);
     };
     pushService.notificationSendError = ^(NSString* token, NSError *error) {
-        NWLogWarn(@"Send notification failed for token '%@' with error '%@': progress %tu%%", token, error.localizedDescription, weakService.intProgress);
+        NWLogWarn(@"Send notification failed for token '%@' with error '%@': progress %.2f%%", token, error.localizedDescription, weakService.progress);
     };
 }
 

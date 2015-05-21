@@ -90,9 +90,20 @@ if( _block ) \
     return _totalCount;
 }
 
+- (CGFloat) progress
+{
+    double value = ((double)(self.sendCount + self.failedCount) / (double)self.totalCount) * 100.0;
+    // round if single step takes more than 1%
+    if((1.0 / (double)self.totalCount) > 0.01)
+    {
+        value = round(value);
+    }
+    return (CGFloat)value;
+}
+
 - (NSUInteger) intProgress
 {
-    return round(((double)(self.sendCount + self.failedCount) / (double)self.totalCount) * 100.0);
+    return round([self progress]);
 }
 
 - (void) pushNotification
