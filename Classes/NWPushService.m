@@ -20,6 +20,12 @@ if( _block ) \
 
 @interface NWPushService ()
 
+@property (nonatomic, assign) NSUInteger sendCount;
+
+@property (nonatomic, assign) NSUInteger failedCount;
+
+@property (nonatomic, assign) NSUInteger totalCount;
+
 @property (nonatomic, strong) NSString *payload;
 
 @property (nonatomic, strong) NSDate *expiry;
@@ -59,10 +65,34 @@ if( _block ) \
     self.expiry = [expiry copy];
     self.priority = priority;
     
+    self.totalCount = [tokens count];
+    self.sendCount = 0;
+    self.failedCount = 0;
+    
     __weak typeof(self) weakSelf = self;
     dispatchOnMain(weakSelf.beginBlock);
     
     [self pushNotification];
+}
+
+- (NSUInteger) sendCount
+{
+    return _sendCount;
+}
+
+- (NSUInteger) failedCount
+{
+    return _failedCount;
+}
+
+- (NSUInteger) totalCount
+{
+    return _totalCount;
+}
+
+- (NSUInteger) intProgress
+{
+    return round(((double)(self.sendCount + self.failedCount) / (double)self.totalCount) * 100.0);
 }
 
 - (void) pushNotification
@@ -104,7 +134,7 @@ if( _block ) \
         if(strongSelf)
         {
             NWNotification *notification = [[NWNotification alloc] initWithPayload:strongSelf.payload
-                                                                             token:nil
+                                                                             token:token
                                                                         identifier:0
                                                                         expiration:strongSelf.expiry
                                                                           priority:strongSelf.priority];
@@ -128,27 +158,30 @@ if( _block ) \
                                    BOOL read = [strongSelf.hub readFailed:&failed
                                                             autoReconnect:YES
                                                                     error:&error];
-                                   if (read)
+                                   if (read && !failed)
                                    {
-                                       if (!failed)
-                                       {
-                                           dispatchOnMain(weakSelf.notificationSendComplete,token);
-                                       }
+                                       weakSelf.sendCount += 1;
+                                       dispatchOnMain(weakSelf.notificationSendComplete,token);
+                                   } else {
+                                        [weakSelf pushFailed:token withError:error];
                                    }
                                    
                                    [_hub trimIdentifiers];
                                    
                                    dispatch_group_leave(strongSelf.sendQueueGroup);
                                });
+            } else {
+                [weakSelf pushFailed:token withError:error];
             }
-            
-            
-            if(nil != error)
-            {
-                dispatchOnMain(weakSelf.notificationSendError,token, error);
-            }
+                        
         }
     };
+}
+
+- (void)pushFailed:(NSString*) token withError:(NSError*) error
+{
+    self.failedCount += 1;
+    dispatchOnMain(self.notificationSendError, token, error);
 }
 
 - (void)complete

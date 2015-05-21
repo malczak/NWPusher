@@ -27,6 +27,14 @@
 
 @property (nonatomic, copy) void (^completionBlock)();
 
+- (NSUInteger) sendCount;
+
+- (NSUInteger) failedCount;
+
+- (NSUInteger) totalCount;
+
+- (NSUInteger) intProgress;
+
 - (void) pushWithTokens:(NSArray*) tokens payload:(NSString*) payload expireDate:(NSDate*) expiry priority:(NSUInteger) priority;
 
 @end

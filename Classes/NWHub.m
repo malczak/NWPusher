@@ -190,6 +190,10 @@
         }
         if (reconnect) {
             [self reconnectWithError:error];
+            if(!*error)
+            {
+                *error = [apnError copy];
+            }
         }
     }
     return YES;

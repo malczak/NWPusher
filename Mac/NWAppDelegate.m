@@ -169,7 +169,7 @@
 -(NSUInteger) pushDelayInMs
 {
     double span = _delaySlider.maxValue - _delaySlider.minValue;
-    NSUInteger valueInMs = 0 + 2 * (NSUInteger)floor((_delaySlider.doubleValue/span * 500.0)/2.0);
+    NSUInteger valueInMs = 2 * (NSUInteger)floor((_delaySlider.doubleValue/span * 500.0)/2.0);
     return valueInMs;
 }
 
@@ -177,8 +177,11 @@
 
 - (void) createPushService
 {
-    __weak typeof(self) weakSelf = self;
     pushService = [[NWPushService alloc] init];
+
+    __weak typeof(self) weakSelf = self;
+    __weak NWPushService *weakService = pushService;
+    
     pushService.beginBlock = ^(){
         NWLogInfo(@"Push start");
         [weakSelf showSendProgress:YES];
@@ -188,10 +191,10 @@
         [weakSelf showSendProgress:NO];
     };
     pushService.notificationWillSend = ^(NSString *token) {
-        NWLogInfo(@"Sending notification for token '%@'", token);
+        NWLogInfo(@"Sending notification for token '%@': progress %tu%%", token, weakService.intProgress);
     };
     pushService.notificationSendError = ^(NSString* token, NSError *error) {
-        NWLogWarn(@"Send notification failed for token '%@' with error '%@'", token, error.localizedDescription);
+        NWLogWarn(@"Send notification failed for token '%@' with error '%@': progress %tu%%", token, error.localizedDescription, weakService.intProgress);
     };
 }
 
