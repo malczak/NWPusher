@@ -16,7 +16,8 @@
 
 @interface NWAppDelegate () <NWHubDelegate> @end
 
-@implementation NWAppDelegate {
+@implementation NWAppDelegate
+{
     IBOutlet NSPopUpButton *_certificatePopup;
     IBOutlet NSComboBox *_tokenCombo;
     IBOutlet NSButton *_importButton;
@@ -42,6 +43,7 @@
     
     NWPushService *pushService;
     NWTokensImporter *importer;
+    NSMutableArray *certificateInvalidTokens;
     
     dispatch_queue_t _serial;
 }
@@ -55,6 +57,8 @@
     NWLAddPrinter("NWPusher", NWPusherPrinter, 0);
     NWLPrintInfo();
     _serial = dispatch_queue_create("NWAppDelegate", DISPATCH_QUEUE_SERIAL);
+    
+    certificateInvalidTokens = @[].mutableCopy;
     
     [self resetTokenCombo];
     
@@ -519,9 +523,12 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (hub) {
                     NWLogInfo(@"Connected  (%@%@)", summary, sandbox ? @" sandbox" : @"");
+                    // fetch for invalids for certificate
                     _hub = hub;
                     _pushButton.enabled = YES;
                     _reconnectButton.enabled = YES;
+                    
+                    [self feedback];
                 } else {
                     NWLogWarn(@"Unable to connect: %@", error.localizedDescription);
                     [hub disconnect];
@@ -579,6 +586,7 @@
     pushService.queue = _serial;
     pushService.hub = _hub;
     pushService.delay = [self pushDelayInMs];
+    [pushService excludeTokens:certificateInvalidTokens];
     [pushService pushWithTokens:tokens
                         payload:payload
                      expireDate:expiry
@@ -589,31 +597,77 @@
 {
     dispatch_async(_serial, ^{
         NWCertificateRef certificate = _selectedCertificate;
-        if (!certificate) {
+        if (!certificate)
+        {
             NWLogWarn(@"Unable to connect to feedback service: no certificate selected");
             return;
         }
         BOOL sandbox = [NWSecTools isSandboxCertificate:certificate];
         NSString *summary = [NWSecTools summaryWithCertificate:certificate];
-        NWLogInfo(@"Connecting to feedback service..  (%@%@)", summary, sandbox ? @" sandbox" : @"");
+        NSString *prefix = sandbox ? @"sandbox" : @"";
+        
+        NWLogInfo(@"Connecting to feedback service..  (%@ %@)", summary, prefix);
         NSError *error = nil;
         NWIdentityRef identity = [NWSecTools keychainIdentityWithCertificate:_selectedCertificate error:&error];
         NWPushFeedback *feedback = [NWPushFeedback connectWithIdentity:identity error:&error];
-        if (!feedback) {
+        if (!feedback)
+        {
             NWLogWarn(@"Unable to connect to feedback service: %@", error.localizedDescription);
             return;
         }
-        NWLogInfo(@"Reading feedback service..  (%@%@)", summary, sandbox ? @" sandbox" : @"");
+        
+        NWLogInfo(@"Reading feedback service..  (%@ %@)", summary, prefix);
         NSArray *pairs = [feedback readTokenDatePairsWithMax:1000 error:&error];
-        if (!pairs) {
+        if (!pairs)
+        {
             NWLogWarn(@"Unable to read feedback: %@", error.localizedDescription);
             return;
         }
-        for (NSArray *pair in pairs) {
-            NWLogInfo(@"token: %@  date: %@", pair[0], pair[1]);
-        }
-        if (pairs.count) {
+        
+        NSString *fileName = [NSString stringWithFormat:@"%@_%@.dat", summary, prefix];
+
+        NSFileManager *fileManger = [NSFileManager defaultManager];
+        NSURL *documentsUrl = [[fileManger URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
+        NSURL *fileUrl = [documentsUrl URLByAppendingPathComponent:fileName];
+        
+        pairs = [NSArray arrayWithObjects:
+                 @[@"1212312312312312",[NSDate date]],
+                 @[@"aksjdoasdasd",[NSDate date]],
+                 @[@"ajhsdiauhsiduah",[NSDate date]],
+                 nil];
+        
+        if (pairs.count)
+        {
+            NSOutputStream *os = [NSOutputStream outputStreamWithURL:fileUrl append:YES];
+            [os open];
+            uint8_t bufferSize = 65;
+            uint8_t buffer[bufferSize];
+            
+            // store in file
+            for (NSArray *pair in pairs)
+            {
+                NSString *token = pair[0];
+                
+                NSUInteger tokenLength = MIN(bufferSize-1, [token length]);
+                const uint8_t *tokenCStr = (const uint8_t *)[token UTF8String];
+                memcpy(buffer, tokenCStr, tokenLength);
+                buffer[tokenLength++] = '\n';
+                
+                NSUInteger written = [os write:buffer maxLength:tokenLength];
+                if (written != tokenLength)
+                {
+                    NWLogWarn(@"Token %@ not written to stream", token);
+                }
+                
+                [certificateInvalidTokens addObject:token];
+                
+                NWLogInfo(@"token: %@  date: %@", token, pair[1]);
+            }
+            
+            [os close];
+            
             NWLogInfo(@"Feedback service returned %i device tokens, see logs for details", (int)pairs.count);
+            NWLogInfo(@"Feedback tokens saved to file '%@'", fileUrl);
         } else {
             NWLogInfo(@"Feedback service returned zero device tokens");
         }

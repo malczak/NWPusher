@@ -20,6 +20,8 @@ if( _block ) \
 
 @interface NWPushService ()
 
+@property (nonatomic, strong) NSMutableArray *invalidTokens;
+
 @property (nonatomic, assign) NSUInteger sendCount;
 
 @property (nonatomic, assign) NSUInteger failedCount;
@@ -36,7 +38,10 @@ if( _block ) \
 
 @property (nonatomic, strong) NSArray *tokens;
 
+@property (nonatomic, strong) NSMutableArray *excludedTokens;
+
 @property (nonatomic, assign) dispatch_group_t sendQueueGroup;
+
 
 @end
 
@@ -47,9 +52,15 @@ if( _block ) \
     self = [super init];
     if(self)
     {
+        self.excludedTokens = @[].mutableCopy;
         self.sendQueueGroup = dispatch_group_create();
     }
     return self;
+}
+
+- (void) excludeTokens:(NSArray*) tokens
+{
+    [self.excludedTokens addObjectsFromArray:tokens];
 }
 
 - (void) pushWithTokens:(NSArray*) tokens payload:(NSString*) payload expireDate:(NSDate*) expiry priority:(NSUInteger) priority
@@ -59,6 +70,7 @@ if( _block ) \
     NSAssert(nil != self.queue, @"Missing hub queue");
 
     self.tokens = [tokens copy];
+    self.invalidTokens = [NSMutableArray array];
     self.tokenEnumerator = self.tokens.objectEnumerator;
     
     self.payload = payload;
@@ -108,7 +120,21 @@ if( _block ) \
 
 - (void) pushNotification
 {
-    NSString *token = [self.tokenEnumerator nextObject];
+    BOOL repeat = YES;
+    NSString *token = nil;
+    
+    while(repeat)
+    {
+        token = [self.tokenEnumerator nextObject];
+        repeat = NO;
+
+        if(token && [self.excludedTokens containsObject:token])
+        {
+            [self.excludedTokens removeObject:token];
+            repeat = YES;
+        }
+    }
+    
     if(token)
     {
         __weak typeof(self) weakSelf = self;
@@ -192,6 +218,20 @@ if( _block ) \
 - (void)pushFailed:(NSString*) token withError:(NSError*) error
 {
     self.failedCount += 1;
+    
+    if(error)
+    {
+        NSDictionary *userInfo = error.userInfo;
+        NSNumber *reason = [userInfo objectForKey:NWErrorReasonCodeKey];
+        if(reason)
+        {
+            if([reason integerValue] == kNWErrorAPNInvalidTokenContent)
+            {
+                [self.invalidTokens addObject: token];
+            }
+        }
+    }
+    
     dispatchOnMain(self.notificationSendError, token, error);
 }
 

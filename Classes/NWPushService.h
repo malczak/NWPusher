@@ -37,6 +37,8 @@
 
 - (NSUInteger) intProgress;
 
+- (void) excludeTokens:(NSArray*) tokens;
+
 - (void) pushWithTokens:(NSArray*) tokens payload:(NSString*) payload expireDate:(NSDate*) expiry priority:(NSUInteger) priority;
 
 @end
