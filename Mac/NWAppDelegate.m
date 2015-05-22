@@ -365,7 +365,7 @@
         
         NWLogInfo(@"Importing tokens...");
         [self showProgress:YES];
-        [importer parseTokensWithBlock:nil
+        [importer parseTokensAsyncWithBlock:nil
                             completion:^(NSArray *tokens){
                                 dispatch_async(dispatch_get_main_queue(), ^(){
                                     [weakSelf tokensImported:tokens];
@@ -593,6 +593,23 @@
                        priority:priority];
 }
 
+- (void)importInvalidTokensForCertificate
+{
+    [certificateInvalidTokens removeAllObjects];
+
+    NSURL *invalidTokensFile = [self invalidTokensFileForCertificate];
+    
+    if([[NSFileManager defaultManager] fileExistsAtPath:[invalidTokensFile path]])
+    {
+        NWTokensImporter *invalidTokensImporter = [[NWTokensImporter alloc] init];
+        [invalidTokensImporter addTokensFile:invalidTokensFile];
+        [invalidTokensImporter parseTokensWithBlock:^(NSString *file, NSString *token, NSError *error){
+            [certificateInvalidTokens addObject:token];
+        }];
+        invalidTokensImporter = nil;
+    }
+}
+
 - (void)feedback
 {
     dispatch_async(_serial, ^{
@@ -624,21 +641,12 @@
             return;
         }
         
-        NSString *fileName = [NSString stringWithFormat:@"%@_%@.dat", summary, prefix];
-
-        NSFileManager *fileManger = [NSFileManager defaultManager];
-        NSURL *documentsUrl = [[fileManger URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
-        NSURL *fileUrl = [documentsUrl URLByAppendingPathComponent:fileName];
-        
-        pairs = [NSArray arrayWithObjects:
-                 @[@"1212312312312312",[NSDate date]],
-                 @[@"aksjdoasdasd",[NSDate date]],
-                 @[@"ajhsdiauhsiduah",[NSDate date]],
-                 nil];
+        [self importInvalidTokensForCertificate];
         
         if (pairs.count)
         {
-            NSOutputStream *os = [NSOutputStream outputStreamWithURL:fileUrl append:YES];
+            NSURL *invalidTokensFile = [self invalidTokensFileForCertificate];
+            NSOutputStream *os = [NSOutputStream outputStreamWithURL:invalidTokensFile append:YES];
             [os open];
             uint8_t bufferSize = 65;
             uint8_t buffer[bufferSize];
@@ -659,19 +667,44 @@
                     NWLogWarn(@"Token %@ not written to stream", token);
                 }
                 
-                [certificateInvalidTokens addObject:token];
+                if(![certificateInvalidTokens containsObject:token])
+                {
+                    [certificateInvalidTokens addObject:token];
+                }
                 
                 NWLogInfo(@"token: %@  date: %@", token, pair[1]);
             }
             
             [os close];
             
+            NWLogInfo(@"Feedback tokens saved to file '%@'", invalidTokensFile);
             NWLogInfo(@"Feedback service returned %i device tokens, see logs for details", (int)pairs.count);
-            NWLogInfo(@"Feedback tokens saved to file '%@'", fileUrl);
         } else {
             NWLogInfo(@"Feedback service returned zero device tokens");
         }
     });
+}
+
+-(NSURL*) invalidTokensFileForCertificate
+{
+    NWCertificateRef certificate = _selectedCertificate;
+    if (!certificate)
+    {
+        NWLogWarn(@"Unable to connect to feedback service: no certificate selected");
+        return nil;
+    }
+    
+    BOOL sandbox = [NWSecTools isSandboxCertificate:certificate];
+    NSString *summary = [NWSecTools summaryWithCertificate:certificate];
+    NSString *prefix = sandbox ? @"sandbox" : @"";
+
+    NSString *fileName = [NSString stringWithFormat:@"%@_%@.dat", summary, prefix];
+    
+    NSFileManager *fileManger = [NSFileManager defaultManager];
+    NSURL *documentsUrl = [[fileManger URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
+    NSURL *fileUrl = [documentsUrl URLByAppendingPathComponent:fileName];
+   
+    return fileUrl;
 }
 
 #pragma mark - Config

@@ -18,6 +18,8 @@
 
 -(void) addTokensFile:(NSURL*) url;
 
--(void) parseTokensWithBlock:(void(^)(NSString *file, NSString *token, NSError* error)) block completion:(void(^)(NSArray *tokens)) completionBlock;
+-(void) parseTokensAsyncWithBlock:(void(^)(NSString *file, NSString *token, NSError* error)) block completion:(void(^)(NSArray *tokens)) completionBlock;
+
+-(void) parseTokensWithBlock:(void(^)(NSString *file, NSString *token, NSError* error)) block;
 
 @end

@@ -71,7 +71,7 @@
     }
 }
 
--(void) parseTokensWithBlock:(void(^)(NSString *file, NSString *token, NSError* error)) block completion:(void(^)(NSArray *tokens)) completionBlock
+-(void) parseTokensAsyncWithBlock:(void(^)(NSString *file, NSString *token, NSError* error)) block completion:(void(^)(NSArray *tokens)) completionBlock
 {
     if(self.working)
     {
@@ -81,39 +81,81 @@
     self.parseBlock = block;
     self.completionBlock = completionBlock;
 
-    [self popFileAndReadTokens];
+    [self parseTokensAsync:YES];
 }
 
--(void) popFileAndReadTokens
+-(void) parseTokensWithBlock:(void(^)(NSString *file, NSString *token, NSError* error)) block
 {
     if(self.working)
     {
         return;
     }
+
+    self.parseBlock = block;
+    self.completionBlock = nil;
     
-    if([self.tokenFiles count])
+    [self parseTokensAsync:NO];
+}
+
+-(void) parseTokensAsync:(BOOL) async
+{
+    if(async)
     {
-        NSURL *url = [self.tokenFiles firstObject];
+        [self popFileAndParseAsync];
+    } else {
+        [self parseAllFilesWithBlock];
+    }
+}
+
+-(BOOL) createStream
+{
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSURL *url = nil;
+    
+    do
+    {
+        if(![self.tokenFiles count])
+        {
+            return NO;
+        }
+        
+        url =[self.tokenFiles firstObject];
         [self.tokenFiles removeObject:url];
-        
-        self.filePath = [[url filePathURL] path];
-        self.inputStream = [NSInputStream inputStreamWithFileAtPath:self.filePath];
-        self.inputStream.delegate = self;
-        
+    } while( ![fileManager fileExistsAtPath:[url path]] );
+    
+    self.filePath = [[url filePathURL] path];
+    self.inputStream = [NSInputStream inputStreamWithFileAtPath:self.filePath];
+    self.inputStream.delegate = self;
+    
+    return YES;
+}
+
+-(void) popFileAndParseAsync
+{
+    if([self createStream])
+    {
         self.working = YES;
-        
+
         dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+        
         __weak typeof(self) weakSelf = self;
         dispatch_async(queue, ^(){
             [weakSelf readStreamWithBlock:weakSelf.parseBlock];
+            [weakSelf popFileAndParseAsync];
         });
-        
     } else {
-        if(self.completionBlock)
-        {
-            self.completionBlock(self.availableTokens);
-        }
+        [self tokenParseCompleted];
     }
+}
+
+-(void) parseAllFilesWithBlock
+{
+    while ([self createStream])
+    {
+        self.working = YES;
+        [self readStreamWithBlock:self.parseBlock];
+    }
+    [self tokenParseCompleted];
 }
 
 -(void) readStreamWithBlock:(void(^)(NSString *file, NSString *token, NSError *error)) block
@@ -132,7 +174,9 @@
             if(![line hasPrefix:@"//"])
             {
                 NSString *token = line;
-                // @todo check ?!
+
+                // @todo validate tokens ?!
+                
                 if(block)
                 {
                     block(self.filePath, token, nil);
@@ -172,9 +216,15 @@
     getToken(lineData);
     
     self.working = NO;
-    [self popFileAndReadTokens];
 }
 
+-(void) tokenParseCompleted
+{
+    if(self.completionBlock)
+    {
+        self.completionBlock(self.availableTokens);
+    }
+}
 
 -(void)dealloc
 {
